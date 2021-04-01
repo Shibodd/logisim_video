@@ -1,51 +1,33 @@
-# ffmpeg -i .\video.mkv -vf fps=1/1 $filename%03d.bmp
-
-import pathlib
-import argparse
-import subprocess
+import av
 from PIL import Image, ImageOps
 import numpy as np
 import math
-import itertools
+import argparse
+import pathlib
 import traceback
 
-FRAME_EXT = "png"
-
-def extract(out_folder, video_path, fps):
-    if out_folder.is_dir():
-        return False
-    
-    out_folder.mkdir()
-
-    out_file_path = out_folder / ('%03d.' + FRAME_EXT)
-    fps_str = str(fps) + "/1"
-
-    subprocess.run(["ffmpeg", "-i", str(video_path), "-vf", "fps=" + fps_str, "-y", str(out_file_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return True
 
 
-def load_resize_divide_image(image_path, resolution):
-    image = Image.open(image_path)
-    resized = image.resize(resolution)
-
+def calculate_32x32_areas(size):
+    """ Returns a list of areas dividing a rectangle sized size, and the count for each axis. """
     w_parts = math.ceil(resolution[0] / 32)
     h_parts = math.ceil(resolution[1] / 32)
 
-    parts = []
+    areas = []
+
     for x_t in range(w_parts):
         for y_t in range(h_parts):
             x = x_t * 32
             y = y_t * 32
 
-            area = (x, y, min(x * 32 + 32, resolution[0]), min(y + 32, resolution[1]))
-            parts.append(resized.crop(area))
+            areas.append((x, y, min(x * 32 + 32, size[0]), min(y + 32, size[1])))
 
-
-    return parts
-
+    return (areas, w_parts, h_parts)
 
 
 def image_to_bitarray(frame, threshold):
+    """ Converts an image to a bitarray """
+
     frame = ImageOps.mirror(frame)
     frame = ImageOps.grayscale(frame)
     
@@ -61,88 +43,68 @@ def image_to_bitarray(frame, threshold):
 
 POWERS_OF_TWO = 2 ** np.arange(32)
 def bitarray_to_number(bitarr):
+    """ Converts a bitarray of maximum 32 bits to an integer """
+
+    # The conversion can be thought as a dot product 
+    # between the bitarray and the corresponding powers of two.
+    # e.g.  [1 0 1] * [4, 2, 1] = 1 * 4 + 0 * 2 + 1 * 1
     return bitarr.dot(POWERS_OF_TWO[:len(bitarr)])
 
 
-def grouper(iterable, n, fillvalue=None):
-    " Groups iterable in n-sized chunks "
+def num_to_logisim_text(num, width):
+    """ Converts a width-bit number to a HEX string used by logisim """
 
-    args = [iter(iterable)] * n
-    return itertools.zip_longest(*args, fillvalue=fillvalue)
+    numlen = math.ceil(width / 4)
+    numstr = ('{:0' + str(numlen) + 'X}')
+
+    return numstr.format(num & 0xffffffff)
 
 
+class OutputFilesManager:
+    def __init__(self, filename_fmt, file_count):
+        self.opened_files = []
+        for i in range(file_count):
+            self.opened_files.append(open(filename_fmt.format(i), "w"))
 
-def work(frame_folder, resolution):
-    w_parts = math.ceil(resolution[0] / 32)
-    y_parts = math.ceil(resolution[1] / 32)
+    def __enter__(self):
+        return self.opened_files
 
-    frame_count = len(list(frame_folder.glob("*." + FRAME_EXT)))
-
-    files = [open("out" + str(i), "w") for i in range(w_parts * y_parts)]
-    for file in files:
-        file.write("v2.0 raw\n")
-
-    err = False
-    try:
-        for i in range(frame_count):
-            frame_path = frame_folder / (str(i + 1).rjust(3, '0') + '.' + FRAME_EXT)
- 
-            parts = load_resize_divide_image(frame_path, resolution)
-
-            for i, part in enumerate(parts):
-                data_width = part.width
-                
-                data = list(map(bitarray_to_number, image_to_bitarray(part, 127)))
-                
-                numlen = math.ceil(data_width / 4)
-                numstr = ('{:0' + str(numlen) + 'X}')
-
-                # Write everything
-                files[i].write(" ".join(map(  lambda x: numstr.format(x & 0xffffffff),  data)) + " ")
-            frame_count = frame_count + 1
-    except Exception as e:
-        traceback.print_exc()
-        err = True
-    
-    for file in files:
-        file.close()
-
-    if err:
-        exit(1)
-
-    return (w_parts * y_parts, data_width, frame_count)
-
+    def __exit__(self, type, value, traceback):
+        for file in self.opened_files:
+            file.close()
+        
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('video_path', type=pathlib.Path)
 parser.add_argument('w', type=int)
 parser.add_argument('h', type=int)
-parser.add_argument('fps', type=float)
 args = parser.parse_args()
-
-
 
 resolution = (args.w, args.h)
 
-frame_folder = pathlib.Path(args.video_path.name + "_" + str(args.fps))
 
+areas, w_parts, y_parts = calculate_32x32_areas(resolution)
 
-print('Extracting the video frames...')
-if not extract(frame_folder, args.video_path, args.fps):
-    print("Skipping the extraction (delete the", frame_folder, "directory to re-extract).")
-else:
-    print("Extracted the video frames.")
+with OutputFilesManager("out{}", w_parts * y_parts) as files:
+    for file in files:
+        file.write("v2.0 raw\n")
 
+    with av.open("video.mkv") as container:
+        for frame in container.decode(video=0):
+            img = frame.to_image().resize(resolution)
 
+            for i, area in enumerate(areas):
+                part = img.crop(area)
 
-part_count, data_width, frame_count = work(frame_folder, resolution)
+                nums = map(bitarray_to_number, image_to_bitarray(part, 127))
+                files[i].write(" ".join(map(lambda x: num_to_logisim_text(x, part.width), nums)) + " ")
 
+print("Done!\nConfiguration: ")
+print("Address length: ")
 
-address_width = math.ceil(math.log2(resolution[1] * frame_count))
-
-
-print("\nDone! The required configuration is as follows:")
-print("Screens and ROMs required:", part_count)
-print("Data width:", data_width)
-print("Address width:", address_width)
+for i, area in enumerate(areas):
+    x = i % w_parts
+    y = int(i / w_parts)
+    print("Screen ({}, {}):")
+    print("Filename: ")
