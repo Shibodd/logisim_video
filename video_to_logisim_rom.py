@@ -20,7 +20,7 @@ def calculate_32x32_areas(size):
             x = x_t * 32
             y = y_t * 32
 
-            areas.append((x, y, min(x * 32 + 32, size[0]), min(y + 32, size[1])))
+            areas.append((x, y, min(x + 32, size[0]), min(y + 32, size[1])))
 
     return (areas, w_parts, h_parts)
 
@@ -75,18 +75,30 @@ class OutputFilesManager:
         
 
 
+OUTFILE_FMT = "out{}"
+
+
+# Argument parsing
 parser = argparse.ArgumentParser()
 parser.add_argument('video_path', type=pathlib.Path)
 parser.add_argument('w', type=int)
 parser.add_argument('h', type=int)
 args = parser.parse_args()
 
+
+
+
+
 resolution = (args.w, args.h)
-
-
 areas, w_parts, y_parts = calculate_32x32_areas(resolution)
 
-with OutputFilesManager("out{}", w_parts * y_parts) as files:
+
+
+# Work
+print("Working...")
+
+frame_count = 0
+with OutputFilesManager(OUTFILE_FMT, w_parts * y_parts) as files:
     for file in files:
         file.write("v2.0 raw\n")
 
@@ -100,11 +112,19 @@ with OutputFilesManager("out{}", w_parts * y_parts) as files:
                 nums = map(bitarray_to_number, image_to_bitarray(part, 127))
                 files[i].write(" ".join(map(lambda x: num_to_logisim_text(x, part.width), nums)) + " ")
 
-print("Done!\nConfiguration: ")
-print("Address length: ")
+            frame_count = frame_count + 1
 
+
+
+# Info
+print("Done! Configuration:")
+print("Minimum address width:", math.ceil(math.log2(max(32, resolution[0]) * frame_count)), "\n")
 for i, area in enumerate(areas):
-    x = i % w_parts
-    y = int(i / w_parts)
-    print("Screen ({}, {}):")
-    print("Filename: ")
+    x = int(i / y_parts)
+    y = i % y_parts
+
+    print("Screen ({}, {}):".format(x, y))
+    print("Filename:", OUTFILE_FMT.format(i))
+    # (min_x, min_y, max_x, max_y)
+    print("Data and screen width:", area[2] - area[0]) 
+    print("Screen height:", area[3] - area[1], "\n")
