@@ -27,8 +27,6 @@ def calculate_32x32_areas(size):
 
 def image_to_bitarray(frame, threshold):
     """ Converts an image to a bitarray """
-
-    frame = ImageOps.mirror(frame)
     frame = ImageOps.grayscale(frame)
     
     grayscale_array = np.array(frame)
@@ -107,7 +105,7 @@ with OutputFilesManager(OUTFILE_FMT, w_parts * y_parts) as files:
             img = frame.to_image().resize(resolution)
 
             for i, area in enumerate(areas):
-                part = img.crop(area)
+                part = ImageOps.mirror(img.crop(area))
 
                 nums = map(bitarray_to_number, image_to_bitarray(part, 127))
                 files[i].write(" ".join(map(lambda x: num_to_logisim_text(x, part.width), nums)) + " ")
