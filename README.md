@@ -15,5 +15,5 @@ Then, if the ROMs address width is too low compared to the "Minimum address widt
 For each ROM you can right click on it and click on "Load Image" - then load the corresponding outx (out0, out1, ...) file as per output instructions 
 (it outputs each screen's filename and position). After that, you can play the video using logisim's Simulate menu.
 
-Be aware that screen.circ doesn't know the framerate of your video nor can sync with time - you can benchmark at what FPS you can play your videos using the bottom-right button
+Be aware that screen.circ doesn't know the framerate of your video nor can sync with time (so syncing with music is a PITA) - you can benchmark at what FPS you can play your videos using the bottom-right button
 and a stopwatch of your choice, then convert your video to that framerate and load it into Logisim.
