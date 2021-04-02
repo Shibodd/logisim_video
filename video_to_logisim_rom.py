@@ -80,7 +80,7 @@ OUTFILE_FMT = "out{}"
 
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('video_path', type=pathlib.Path)
+parser.add_argument('video_path')
 parser.add_argument('w', type=int)
 parser.add_argument('h', type=int)
 args = parser.parse_args()
@@ -102,7 +102,7 @@ with OutputFilesManager(OUTFILE_FMT, w_parts * y_parts) as files:
     for file in files:
         file.write("v2.0 raw\n")
 
-    with av.open("video.mkv") as container:
+    with av.open(args.video_path) as container:
         for frame in container.decode(video=0):
             img = frame.to_image().resize(resolution)
 
